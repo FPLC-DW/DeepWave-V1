@@ -1,1 +1,90 @@
-{"cells":[{"cell_type":"markdown","metadata":{},"source":["# DeepWave FPL Predictor\n","This notebook fetches live Fantasy Premier League data, processes it, trains a machine learning model, and outputs predicted points."]},{"cell_type":"code","execution_count":1,"metadata":{},"outputs":[],"source":["import pandas as pd\n","import numpy as np\n","import requests\n","from sklearn.model_selection import train_test_split\n","from sklearn.ensemble import RandomForestRegressor\n","from sklearn.metrics import mean_absolute_error\n","import json\n","\n","# Fetch live FPL data\n","url = 'https://fantasy.premierleague.com/api/bootstrap-static/'\n","response = requests.get(url)\n","data = response.json()\n","\n","# Convert players data to DataFrame\n","elements_df = pd.DataFrame(data['elements'])\n","\n","# Select relevant columns (removing XG/XA/XGI since they may be missing)\n","selected_columns = ['first_name', 'second_name', 'team', 'element_type',\n","                     'minutes', 'goals_scored', 'assists',\n","                     'clean_sheets', 'goals_conceded', 'own_goals',\n","                     'penalties_saved', 'penalties_missed',\n","                     'yellow_cards', 'red_cards',\n","                     'saves', 'bonus', 'bps',\n","                     'influence', 'creativity', 'threat',\n","                     'ict_index', 'total_points']\n","df = elements_df[selected_columns].copy()\n","\n","# Create full_name for reference\n","df['full_name'] = df['first_name'] + ' ' + df['second_name']\n","\n","# Features & Target\n","feature_cols = ['minutes', 'goals_scored', 'assists',\n","                'clean_sheets', 'goals_conceded', 'own_goals',\n","                'penalties_saved', 'penalties_missed',\n","                'yellow_cards', 'red_cards',\n","                'saves', 'bonus', 'bps',\n","                'influence', 'creativity', 'threat', 'ict_index']\n","\n","X = df[feature_cols]\n","y = df['total_points']\n","\n","# Train/test split\n","X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)\n","\n","# Train model\n","model = RandomForestRegressor(n_estimators=200, random_state=42)\n","model.fit(X_train, y_train)\n","\n","# Predictions\n","y_pred = model.predict(X_test)\n","mae = mean_absolute_error(y_test, y_pred)\n","print(f\"Model MAE: {mae:.2f}\")\n","\n","# Predict for all players\n","df['predicted_points'] = model.predict(X)\n","\n","# Create predictions DataFrame for export\n","predictions_df = df[['full_name', 'team', 'element_type', 'predicted_points']].sort_values(by='predicted_points', ascending=False)\n","\n","# Export to CSV in Colab\n","predictions_df.to_csv('deepwave_predictions.csv', index=False)\n","from google.colab import files\n","files.download('deepwave_predictions.csv')"]}],"metadata":{"kernelspec":{"display_name":"Python 3","language":"python","name":"python3"},"language_info":{"name":"python","version":"3.11"}},"nbformat":4,"nbformat_minor":5}
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# Install dependencies\n",
+    "!pip install pandas requests scikit-learn"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "import requests\n",
+    "from sklearn.ensemble import RandomForestRegressor\n",
+    "from sklearn.model_selection import train_test_split\n",
+    "from sklearn.metrics import mean_absolute_error\n",
+    "import datetime\n",
+    "\n",
+    "# Step 1 — Fetch live FPL bootstrap data\n",
+    "url = \"https://fantasy.premierleague.com/api/bootstrap-static/\"\n",
+    "data = requests.get(url).json()\n",
+    "\n",
+    "# Detect current Gameweek\n",
+    "current_gw = next(gw for gw in data['events'] if gw['is_current'])['id']\n",
+    "print(f\"Current Gameweek: {current_gw}\")\n",
+    "\n",
+    "# Convert players and teams to DataFrames\n",
+    "elements_df = pd.DataFrame(data['elements'])\n",
+    "teams_df = pd.DataFrame(data['teams'])\n",
+    "\n",
+    "# Map team names\n",
+    "team_map = dict(zip(teams_df['id'], teams_df['name']))\n",
+    "elements_df['team'] = elements_df['team'].map(team_map)\n",
+    "\n",
+    "# Keep relevant columns\n",
+    "df = elements_df[['first_name','second_name','team','element_type','now_cost','minutes','goals_scored','assists','clean_sheets','saves','total_points']]\n",
+    "df['full_name'] = df['first_name'] + ' ' + df['second_name']\n",
+    "\n",
+    "# Step 2 — Mock historical GW data (placeholder)\n",
+    "# In reality you'd fetch past GW stats per player to train properly\n",
+    "features = ['now_cost','minutes','goals_scored','assists','clean_sheets','saves']\n",
+    "target = 'total_points'\n",
+    "\n",
+    "X = df[features]\n",
+    "y = df[target]\n",
+    "X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)\n",
+    "\n",
+    "# Step 3 — Train model\n",
+    "model = RandomForestRegressor(n_estimators=100, random_state=42)\n",
+    "model.fit(X_train, y_train)\n",
+    "preds = model.predict(X_test)\n",
+    "mae = mean_absolute_error(y_test, preds)\n",
+    "print(f\"Model MAE: {mae:.2f}\")\n",
+    "\n",
+    "# Step 4 — Predict for current GW\n",
+    "df['predicted_points_gw'] = model.predict(df[features]) / 38  # crude split for single GW\n",
+    "df['predicted_points_captain'] = df['predicted_points_gw'] * 2\n",
+    "\n",
+    "# Step 5 — Output CSV\n",
+    "output_cols = ['full_name','team','element_type','predicted_points_gw','predicted_points_captain']\n",
+    "predictions_df = df[output_cols].sort_values(by='predicted_points_gw', ascending=False)\n",
+    "\n",
+    "file_name = f\"deepwave_predictions_gw{current_gw}.csv\"\n",
+    "predictions_df.to_csv(file_name, index=False)\n",
+    "\n",
+    "from google.colab import files\n",
+    "files.download(file_name)"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "name": "python"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
